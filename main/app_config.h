@@ -27,3 +27,6 @@
  * response to the RemoveFabric command still reaches the controller.
  */
 #define LAST_FABRIC_RESET_DELAY_MS              2000
+
+/* REST API: IPv6 addresses are logged this long after attaching to Thread */
+#define REST_API_ADDRESS_LOG_DELAY_MS           10000

@@ -19,7 +19,9 @@ Registry (no esp-matter clone or `ESP_MATTER_PATH` needed).
   Thread router).
 - Hold **BOOT for 10 s** to factory reset. Removing the device from its last
   controller also factory resets it, so it can be commissioned again.
-- WS2812 status LED showing the commissioning/network state.
+- WS2812 status LED showing the commissioning/network state, then the relay.
+- Read-only REST API over Thread (`GET /api/config`): relay state and power-on
+  behavior as JSON.
 
 ## Hardware
 
@@ -98,6 +100,9 @@ idf.py -p COM4 flash monitor
 In VS Code with the ESP-IDF extension, **"ESP-IDF: Open ESP-IDF Terminal"**
 opens a terminal with the environment already loaded (steps 1 and 2 are not
 needed; step 3 is, unless the variable was set permanently).
+
+After adding or removing source files in `main/`, run `idf.py reconfigure`
+before building: `SRC_DIRS` only collects the sources when CMake configures.
 
 ### Windows path length
 
@@ -185,6 +190,63 @@ Removing the device from one controller only removes that controller's fabric;
 the device factory resets only when the last fabric is removed. See
 "Home Assistant and Tuya hubs" below before changing the power-on behavior.
 
+## REST API
+
+A read-only HTTP server (`esp_http_server`, port 80) starts when the device
+attaches to the Thread network:
+
+```bash
+curl -g "http://[<device IPv6 address>]/api/config"
+```
+
+```json
+{"relay":{"on":false},"power_on_behavior":{"start_up_on_off":0,"mode":"off"}}
+```
+
+| Field                               | Meaning                                         |
+| ----------------------------------- | ----------------------------------------------- |
+| `relay.on`                          | Current relay state (OnOff attribute)           |
+| `power_on_behavior.start_up_on_off` | `StartUpOnOff` value: `0`, `1`, `2` or `null`   |
+| `power_on_behavior.mode`            | `off`, `on`, `toggle` or `previous` (`null`)    |
+
+There is no authentication, so the endpoint is read-only on purpose; control
+stays on Matter.
+
+### Finding the address
+
+Thread is IPv6 only: the device has no IPv4 address and does not show up in
+the router's client list. 10 s after attaching (`REST_API_ADDRESS_LOG_DELAY_MS`)
+the addresses are logged, for example:
+
+```
+rest_api: IPv6 (link-local) fe80:0000:0000:0000:b0d0:9ef9:2d5d:122c
+rest_api: IPv6              fd1a:9c98:026f:99fb:2676:ef0c:9799:2261   <- mesh-local (Thread only)
+rest_api: IPv6              fdeb:6781:6cda:0001:d5e3:c59b:d9f7:1ab3   <- reachable from the LAN
+```
+
+Use the address in the prefix the border router announces on the LAN, the one
+the computer has a route to (on Windows: `Get-NetRoute -AddressFamily IPv6`).
+Tested from a Windows PC on Wi-Fi through the Tuya hub, without any manual
+route: HTTP 200 in about 0.2 s.
+
+### Resource usage
+
+Measured on this build (`idf.py size`, `size-components`, `size-files` and the
+free heap logged when the server starts):
+
+| Item                                                            | Cost                                            |
+| --------------------------------------------------------------- | ----------------------------------------------- |
+| Flash: `http_parser` + `esp_http_server` + `rest_api.cpp`       | 23.9 KB (12.3 + 10.4 + 1.1)                     |
+| Flash: whole application image                                  | +42.8 KB (1,702,048 → 1,744,832 bytes)          |
+| Static RAM (`.bss`/`.data`)                                     | negligible (6 bytes in `rest_api.cpp`)          |
+| Heap when the server starts (task stack, control socket, state) | ~7.2 KB (42,376 → 35,212 bytes free)            |
+
+The rest of the image growth is other code the server pulls in (most likely
+the lwIP TCP/socket API, which Matter alone does not use). The server is
+configured for 1 URI handler and 2 simultaneous connections to keep the heap
+cost low: after Matter starts only about 35 KB of heap is left, so keep
+additions small.
+
 ## Implementation notes
 
 ### Why Matter over Thread (and not Zigbee) for Tuya-based hubs
@@ -230,15 +292,16 @@ Management, On/Off with the Lighting feature). Unused clusters are disabled in
 
 ## Project structure
 
-| File                   | Responsibility                                               |
-| ---------------------- | ------------------------------------------------------------ |
-| `main/app_main.cpp`    | Matter node, commissioning events, status LED state          |
-| `main/app_config.h`    | Configuration (pins, timings)                                |
-| `main/relay.c`         | Relay output                                                 |
-| `main/reset_button.c`  | BOOT button (factory reset)                                  |
-| `main/status_led.c`    | WS2812 status LED                                            |
+| File                   | Responsibility                                                |
+| ---------------------- | ------------------------------------------------------------- |
+| `main/app_main.cpp`    | Matter node, commissioning events, status LED state           |
+| `main/app_config.h`    | Configuration (pins, timings)                                 |
+| `main/relay.c`         | Relay output                                                  |
+| `main/rest_api.cpp`    | Read-only REST API over Thread (IPv6)                         |
+| `main/reset_button.c`  | BOOT button (factory reset)                                   |
+| `main/status_led.c`    | WS2812 status LED                                             |
 | `sdkconfig.defaults`   | Target, Bluetooth LE, OpenThread, Matter options and clusters |
-| `partitions.csv`       | 4 MB layout: two OTA slots and Matter factory partitions     |
+| `partitions.csv`       | 4 MB layout: two OTA slots and Matter factory partitions      |
 
 ## Known warnings
 
@@ -247,4 +310,5 @@ Management, On/Off with the Lighting feature). Unused clusters are disabled in
   declared both in the `esp_matter` component and in the Matter SDK Kconfig
   shipped inside it. Harmless.
 - The first build compiles about 1900 files; later builds are incremental. The
-  application uses about 1.7 MB of the 1.875 MB OTA slots.
+  application image is 1,744,832 bytes, 11% of the 1,966,080-byte OTA slots is
+  left.

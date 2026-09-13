@@ -9,6 +9,7 @@
  *
  *   app_main.cpp    Matter node, commissioning events, status LED state
  *   relay.c         relay output
+ *   rest_api.cpp    read-only REST API over Thread (IPv6)
  *   reset_button.c  BOOT button (factory reset)
  *   status_led.c    status LED
  */
@@ -26,6 +27,7 @@
 #include "app_config.h"
 #include "relay.h"
 #include "reset_button.h"
+#include "rest_api.h"
 #include "status_led.h"
 
 static const char *TAG = "app";
@@ -126,6 +128,9 @@ static void app_event_cb(const ChipDeviceEvent *event, intptr_t arg)
             ESP_LOGI(TAG, "Thread network %s",
                      event->ThreadConnectivityChange.Result == kConnectivity_Established ? "attached"
                                                                                          : "lost");
+        }
+        if (event->ThreadConnectivityChange.Result == kConnectivity_Established) {
+            rest_api_start(s_relay_endpoint_id);
         }
         break;
 

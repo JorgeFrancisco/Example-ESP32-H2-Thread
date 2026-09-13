@@ -55,9 +55,16 @@ CONFIG_MBEDTLS_HKDF_C=y
 # Root node (endpoint 0) and the relay (endpoint 1)
 CONFIG_ESP_MATTER_MAX_DYNAMIC_ENDPOINT_COUNT=2
 
-# Test commissioning data (passcode 20202021, discriminator 3840).
-# Replace with esp-matter-mfg-tool factory data for real devices.
-CONFIG_ENABLE_TEST_SETUP_PARAMS=y
+# Commissioning data, device attestation and device info (vendor/product
+# names, VID/PID) come from the factory partition generated with
+# esp-matter-mfg-tool and flashed to the "fctry" partition (see README).
+CONFIG_ENABLE_TEST_SETUP_PARAMS=n
+CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER=y
+CONFIG_ENABLE_ESP32_DEVICE_INSTANCE_INFO_PROVIDER=y
+CONFIG_FACTORY_PARTITION_DAC_PROVIDER=y
+CONFIG_FACTORY_COMMISSIONABLE_DATA_PROVIDER=y
+CONFIG_FACTORY_DEVICE_INSTANCE_INFO_PROVIDER=y
+CONFIG_CHIP_FACTORY_NAMESPACE_PARTITION_LABEL="fctry"
 
 #
 # Clusters not used by an On/Off Plug-in Unit (saves flash and RAM)

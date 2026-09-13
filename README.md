@@ -17,6 +17,8 @@ Registry (no esp-matter clone or `ESP_MATTER_PATH` needed).
 - `StartUpOnOff` (Lighting feature): relay state at boot. Default: previous state.
 - Commissioning over Bluetooth LE, then Thread (Full Thread Device, can act as a
   Thread router).
+- Per-board factory data: own QR code, device attestation certificate and
+  vendor/product names (generated with `esp-matter-mfg-tool`).
 - Hold **BOOT for 10 s** to factory reset. Removing the device from its last
   controller also factory resets it, so it can be commissioned again.
 - WS2812 status LED showing the commissioning/network state, then the relay.
@@ -61,6 +63,9 @@ BOOT for 10 s to open it again.
   hub does not work: the device talks Thread, not Zigbee.
 - A Matter controller app (Tuya/Smart Life, Google Home, Apple Home, Home
   Assistant, ...). Bluetooth must be enabled on the phone.
+- Factory data for the board (see "Factory data"). The firmware reads the
+  commissioning data from the `fctry` partition; without it the device cannot
+  be commissioned.
 - Internet access on the first build (the Component Manager downloads
   `esp_matter`).
 
@@ -90,11 +95,18 @@ cd C:\Projetos\ESP32\Example-ESP32-H2-Thread
 #    The first build downloads esp_matter and takes a while.
 idf.py build
 
-# 6. Erase the flash on the first flash (and to forget fabrics/Thread network)
+# 6. Erase the flash on the first flash (and to forget fabrics/Thread network).
+#    This also erases the factory data: flash it again in step 8.
 idf.py -p COM4 erase-flash
 
-# 7. Flash and open the serial monitor (exit with Ctrl+])
-idf.py -p COM4 flash monitor
+# 7. Flash the firmware
+idf.py -p COM4 flash
+
+# 8. Flash the factory data of this board (see "Factory data")
+python -m esptool --chip esp32h2 -p COM4 write_flash 0x3E0000 <uuid>-partition.bin
+
+# 9. Open the serial monitor (exit with Ctrl+])
+idf.py -p COM4 monitor
 ```
 
 In VS Code with the ESP-IDF extension, **"ESP-IDF: Open ESP-IDF Terminal"**
@@ -103,6 +115,8 @@ needed; step 3 is, unless the variable was set permanently).
 
 After adding or removing source files in `main/`, run `idf.py reconfigure`
 before building: `SRC_DIRS` only collects the sources when CMake configures.
+After changing `sdkconfig.defaults`, delete `sdkconfig` so the defaults are
+applied again.
 
 ### Windows path length
 
@@ -130,40 +144,157 @@ New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name
 . $HOME/esp/esp-idf/export.sh     # or your ESP-IDF activation script
 idf.py build
 idf.py -p <PORT> erase-flash
-idf.py -p <PORT> flash monitor
+idf.py -p <PORT> flash
+python -m esptool --chip esp32h2 -p <PORT> write_flash 0x3E0000 <uuid>-partition.bin
+idf.py -p <PORT> monitor
 ```
+
+## Factory data (QR code, certificate and names)
+
+Each board has its own factory data, flashed to the `fctry` partition
+(`0x3E0000`, 24 KB): commissioning passcode and discriminator (the QR code),
+device attestation certificate (DAC) and key, and the device information shown
+by the controllers (vendor name, product name, hardware version, VID/PID,
+serial number). It is generated with
+[esp-matter-mfg-tool](https://github.com/espressif/esp-matter-tools/tree/main/mfg_tool),
+and the QR code comes from the same generation as the data flashed to the board.
+
+Tested on the ESP32-H2-DevKitM-1: commissioned in Home Assistant with the
+generated QR code, which then showed the configured vendor and product names.
+
+> **Never commit the generated files.** They include the DAC private key and
+> the passcode verifier of the board. Keep them in private storage: they are
+> needed to flash the same identity again after an erase. `out/` is ignored by
+> `.gitignore` for that reason.
+
+### 1. Install the tool (Windows workaround)
+
+`esp-matter-mfg-tool` 1.0.25 pins `cffi==1.15.0` for Python < 3.13, which has no
+prebuilt wheel for the Python 3.11 shipped with ESP-IDF, so `pip` tries to
+compile it and fails without Microsoft C++ Build Tools. Install it in a separate
+virtual environment (not the ESP-IDF one, to avoid changing its packages) with
+the `cffi` version the tool itself uses on Python 3.13:
+
+```powershell
+$venv = "$env:USERPROFILE\mfgvenv"
+& 'C:\Espressif\tools\python\python.exe' -m venv --without-pip $venv
+Invoke-WebRequest -UseBasicParsing https://bootstrap.pypa.io/get-pip.py -OutFile get-pip.py
+& "$venv\Scripts\python.exe" get-pip.py
+& "$venv\Scripts\python.exe" -m pip install --no-deps esp-matter-mfg-tool
+& "$venv\Scripts\python.exe" -m pip install "bitarray>=2.6.0" "cryptography==44.0.1" "cffi==1.17.1" `
+  "future==0.18.3" "pycparser==2.21" "pypng==0.0.21" "PyQRCode==1.2.1" "python_stdnum==1.18" `
+  "esp-secure-cert-tool==2.3.6" "ecdsa==0.19.0" "esp_idf_nvs_partition_gen==0.1.9" `
+  "click==8.1.7" "click-option-group==0.5.7"
+& "$venv\Scripts\esp-matter-mfg-tool.exe" --help
+```
+
+`pip` reports that `esp-matter-mfg-tool` requires `cffi==1.15.0`; that warning is
+expected. The Python bundled with ESP-IDF has no `ensurepip`, hence
+`--without-pip` and `get-pip.py`.
+
+### 2. Get the Matter test credentials
+
+They are not included in the `esp_matter` component. Download them from
+[connectedhomeip](https://github.com/project-chip/connectedhomeip/tree/93abd8e6891bb578ea63254fb29d099936f345c8/credentials/test),
+the commit used by `esp_matter` 1.6:
+
+- `credentials/test/attestation/Chip-Test-PAI-FFF2-8001-Cert.pem`
+- `credentials/test/attestation/Chip-Test-PAI-FFF2-8001-Key.pem`
+- `credentials/test/certification-declaration/Chip-Test-CD-FFF2-8001.der`
+
+The SDK only ships test Certification Declarations for vendors `0xFFF2` and
+`0xFFF3`, so the board uses VID `0xFFF2`, PID `0x8001`. The DAC generated from
+this test PAI is still a test certificate: controllers show the device as
+uncertified and Home Assistant needs `enable_test_net_dcl`.
+
+### 3. Generate the factory data
+
+```powershell
+& "$venv\Scripts\esp-matter-mfg-tool.exe" -v 0xFFF2 -p 0x8001 `
+  --vendor-name "<vendor name>" --product-name "<product name>" `
+  --hw-ver 1 --hw-ver-str v1.0 `
+  --pai -k Chip-Test-PAI-FFF2-8001-Key.pem -c Chip-Test-PAI-FFF2-8001-Cert.pem `
+  -cd Chip-Test-CD-FFF2-8001.der `
+  --passcode <8 digits> --discriminator <0-4095> `
+  --outdir <private folder>
+```
+
+- `--vendor-name`, `--product-name` and `--hw-ver-str` are what controllers show
+  as vendor, product and hardware version (instead of `TEST_VENDOR`,
+  `TEST_PRODUCT` and `TEST_VERSION`).
+- Passcode: 8 digits from `00000001` to `99999998`, except `11111111`,
+  `22222222` ... `99999999`, `12345678` and `87654321`.
+- Discriminator: `0` to `4095`; use a different one for each board.
+- Always pass `--outdir`: the default is the current directory.
+
+Output in `<outdir>/fff2_8001/<uuid>/`:
+
+| File                    | Content                                                    |
+| ----------------------- | ---------------------------------------------------------- |
+| `<uuid>-partition.bin`  | Factory partition to flash (24,576 bytes)                  |
+| `<uuid>-qrcode.png`     | QR code                                                    |
+| `<uuid>-onb_codes.csv`  | QR payload (`MT:...`), manual code, discriminator, passcode |
+| `internal/`             | DAC certificate and **private key**, PAI certificate       |
+
+The QR code can also be shown from its payload at
+[project-chip.github.io/connectedhomeip/qrcode.html](https://project-chip.github.io/connectedhomeip/qrcode.html?data=MT:Y.K9042C00KA0648G00)
+by replacing the `data=` value with the board's `MT:` payload.
+
+### 4. Firmware configuration
+
+`sdkconfig.defaults` already selects the factory data providers:
+
+```
+CONFIG_ENABLE_TEST_SETUP_PARAMS=n
+CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER=y
+CONFIG_ENABLE_ESP32_DEVICE_INSTANCE_INFO_PROVIDER=y
+CONFIG_FACTORY_PARTITION_DAC_PROVIDER=y
+CONFIG_FACTORY_COMMISSIONABLE_DATA_PROVIDER=y
+CONFIG_FACTORY_DEVICE_INSTANCE_INFO_PROVIDER=y
+CONFIG_CHIP_FACTORY_NAMESPACE_PARTITION_LABEL="fctry"
+```
+
+The label must match the `fctry` partition of `partitions.csv` (the Matter SDK
+default is `nvs`).
+
+### 5. Flash and check
+
+Flash the firmware and `<uuid>-partition.bin` at `0x3E0000` (steps 6 to 8 of
+"Build and flash"). At boot the log shows the values read from the factory
+partition:
+
+```
+chip[DIS]: Advertise commission parameter vendorID=65522 productID=32769 discriminator=<discriminator>/..
+```
+
+Then commission with the board's QR code or manual code.
+
+### Going back to the Matter test codes
+
+Replace the lines of step 4 in `sdkconfig.defaults` with
+`CONFIG_ENABLE_TEST_SETUP_PARAMS=y`, delete `sdkconfig` and rebuild. The board
+then uses the standard test data (QR code `MT:Y.K9042C00KA0648G00`, manual code
+`34970112332`, VID `0xFFF1`, PID `0x8000`) and no factory partition is needed.
 
 ## Commissioning
 
-The firmware uses the Matter **test** commissioning data:
-
-| Field          | Value                    |
-| -------------- | ------------------------ |
-| QR code        | `MT:Y.K9042C00KA0648G00` |
-| Manual code    | `34970112332`            |
-| Passcode       | `20202021`               |
-| Discriminator  | `3840`                   |
-
-These are the standard test values (VID `0xFFF1`, PID `0x8000`, Bluetooth LE);
-they are not printed in the serial log. To show the QR code, open
-`https://project-chip.github.io/connectedhomeip/qrcode.html?data=MT:Y.K9042C00KA0648G00`.
-
 1. Power the board: the LED blinks blue.
-2. In the app, add a **Matter** device and scan the QR code (or type the manual
-   code). Choose the home where the Thread Border Router is.
+2. In the app, add a **Matter** device and scan the board's QR code (or type
+   its manual code). Choose the home where the Thread Border Router is.
 3. Tuya-based apps (Tuya/Smart Life, Nova Digital) may ask for the Wi-Fi SSID
    and password: skip that step and tell the app the device does not use Wi-Fi
    (the ESP32-H2 has no Wi-Fi radio).
-4. With test credentials the app may warn that the device is **not certified**;
-   if it offers to continue, accept. Apps that refuse uncertified devices cannot
-   commission this firmware.
+4. With test certificates the app may warn that the device is **not
+   certified**; if it offers to continue, accept. Apps that refuse uncertified
+   devices cannot commission this firmware.
 5. The LED blinks purple while commissioning, then turns green once the device
    is attached to the Thread network. The device shows up as a plug/outlet and
    the relay follows the app's on/off. The first commands right after adding it
    may not reach the device while it is still settling in the Thread network.
 
 Deleting the device in the app removes its fabric; with no fabric left the
-device factory resets and blinks blue again.
+device factory resets and blinks blue again. The factory data (QR code,
+certificate, names) is not affected by a factory reset, only by `erase-flash`.
 
 ### Home Assistant first, then Tuya (multi-admin)
 
@@ -178,9 +309,9 @@ the device in the Tuya app:
    Thread integration, preferred network synced to the Companion app).
 3. Factory reset the board (hold BOOT for 10 s) and commission it from the
    Home Assistant Companion app: **Settings > Connectivity > Matter > Add
-   device > "No, it's new"**, then scan the QR code. It can take a few minutes:
-   the phone commissions the device first and then hands it over to Home
-   Assistant (two fabrics appear in the log).
+   device > "No, it's new"**, then scan the board's QR code. It can take a few
+   minutes: the phone commissions the device first and then hands it over to
+   Home Assistant (two fabrics appear in the log).
 4. In Home Assistant, use the device's **share** option to open a commissioning
    window and get a temporary pairing code.
 5. In the Tuya app, add a **Matter** device with that code (not the board's QR
@@ -275,13 +406,13 @@ Border Router the ESP32-H2 can join as a standard Matter device instead.
   configuration (otherwise Home Assistant aborts right after device attestation,
   because of the test certificates) and the Thread credentials on the phone.
 
-### Test credentials
+### Test certificates
 
-`CONFIG_ENABLE_TEST_SETUP_PARAMS` and the default device attestation use the
-Matter test vendor (VID `0xFFF1`, PID `0x8000`). They are fine for development,
+The DAC in the factory data is signed by the Matter SDK **test** PAI
+(`Chip-Test-PAI-FFF2-8001`) and uses test VID/PID. It is fine for development,
 but controllers show the device as uncertified and some may refuse it. Real
-products need their own factory data (`esp-matter-mfg-tool`) and Matter
-certification.
+products need a PAI from a Matter certificate authority, their own VID/PID and
+Matter certification.
 
 ### Data model
 
@@ -292,16 +423,16 @@ Management, On/Off with the Lighting feature). Unused clusters are disabled in
 
 ## Project structure
 
-| File                   | Responsibility                                                |
-| ---------------------- | ------------------------------------------------------------- |
-| `main/app_main.cpp`    | Matter node, commissioning events, status LED state           |
-| `main/app_config.h`    | Configuration (pins, timings)                                 |
-| `main/relay.c`         | Relay output                                                  |
-| `main/rest_api.cpp`    | Read-only REST API over Thread (IPv6)                         |
-| `main/reset_button.c`  | BOOT button (factory reset)                                   |
-| `main/status_led.c`    | WS2812 status LED                                             |
-| `sdkconfig.defaults`   | Target, Bluetooth LE, OpenThread, Matter options and clusters |
-| `partitions.csv`       | 4 MB layout: two OTA slots and Matter factory partitions      |
+| File                   | Responsibility                                                          |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `main/app_main.cpp`    | Matter node, commissioning events, status LED state                     |
+| `main/app_config.h`    | Configuration (pins, timings)                                           |
+| `main/relay.c`         | Relay output                                                            |
+| `main/rest_api.cpp`    | Read-only REST API over Thread (IPv6)                                   |
+| `main/reset_button.c`  | BOOT button (factory reset)                                             |
+| `main/status_led.c`    | WS2812 status LED                                                       |
+| `sdkconfig.defaults`   | Target, Bluetooth LE, OpenThread, Matter, factory data providers, clusters |
+| `partitions.csv`       | 4 MB layout: two OTA slots, `fctry` factory data and secure cert partitions |
 
 ## Known warnings
 
@@ -310,5 +441,5 @@ Management, On/Off with the Lighting feature). Unused clusters are disabled in
   declared both in the `esp_matter` component and in the Matter SDK Kconfig
   shipped inside it. Harmless.
 - The first build compiles about 1900 files; later builds are incremental. The
-  application image is 1,744,832 bytes, 11% of the 1,966,080-byte OTA slots is
+  application image is about 1.74 MB, 11% of the 1,966,080-byte OTA slots is
   left.

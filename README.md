@@ -160,6 +160,31 @@ they are not printed in the serial log. To show the QR code, open
 Deleting the device in the app removes its fabric; with no fabric left the
 device factory resets and blinks blue again.
 
+### Home Assistant first, then Tuya (multi-admin)
+
+A Matter device can be controlled by several controllers at the same time, each
+with its own fabric. To use Home Assistant as the main controller and still see
+the device in the Tuya app:
+
+1. In the Home Assistant **Matter Server** app configuration, enable
+   `enable_test_net_dcl` and restart it. Without it Home Assistant rejects the
+   test certificates and aborts right after device attestation.
+2. Make sure the phone knows the Thread network credentials (Home Assistant
+   Thread integration, preferred network synced to the Companion app).
+3. Factory reset the board (hold BOOT for 10 s) and commission it from the
+   Home Assistant Companion app: **Settings > Connectivity > Matter > Add
+   device > "No, it's new"**, then scan the QR code. It can take a few minutes:
+   the phone commissions the device first and then hands it over to Home
+   Assistant (two fabrics appear in the log).
+4. In Home Assistant, use the device's **share** option to open a commissioning
+   window and get a temporary pairing code.
+5. In the Tuya app, add a **Matter** device with that code (not the board's QR
+   code), skip the Wi-Fi step and accept the uncertified device warning.
+
+Removing the device from one controller only removes that controller's fabric;
+the device factory resets only when the last fabric is removed. See
+"Home Assistant and Tuya hubs" below before changing the power-on behavior.
+
 ## Implementation notes
 
 ### Why Matter over Thread (and not Zigbee) for Tuya-based hubs
@@ -175,13 +200,18 @@ Border Router the ESP32-H2 can join as a standard Matter device instead.
 - Every applied attribute change is logged, including writes from controllers:
   `esp_matter_attribute: ********** W : Endpoint 0x0001's Cluster 0x00000006's Attribute 0x00004003 is 1 **********`
   (`0x4003` is `StartUpOnOff`: 0 off, 1 on, 2 toggle, null previous state).
-- When Home Assistant reaches the device **through a Tuya hub**, the hub forwards
-  the "Power-on behavior" setting as `null` whatever is selected, so the device
-  always restores its previous state. On/off commands are forwarded correctly.
-- Commissioning the device **directly** in Home Assistant writes the real value.
-  It requires `enable_test_net_dcl` in the Matter Server app configuration
-  (otherwise Home Assistant aborts right after device attestation, because of
-  the test certificates) and the Thread credentials on the phone.
+- **Change the power-on behavior only from Home Assistant commissioned directly.**
+  When the setting goes through a Tuya hub (for example Home Assistant
+  controlling the device via the hub), the hub writes `StartUpOnOff` as `null`
+  whatever is selected, so the device always restores its previous state and
+  any value set before is overwritten. On/off commands are forwarded correctly.
+- With Home Assistant commissioned directly (see "Home Assistant first, then
+  Tuya"), the real value is written (`... Attribute 0x00004003 is 0` from the
+  Home Assistant fabric). With the Tuya app added afterwards through sharing,
+  the hub did not rewrite `StartUpOnOff` by itself during our tests.
+- Direct commissioning requires `enable_test_net_dcl` in the Matter Server app
+  configuration (otherwise Home Assistant aborts right after device attestation,
+  because of the test certificates) and the Thread credentials on the phone.
 
 ### Test credentials
 

@@ -1,0 +1,13 @@
+# ESP-IDF build output
+build/
+sdkconfig.old
+
+# Managed components (restored from dependencies.lock on build)
+managed_components/
+
+# Local editor/tool settings (machine-specific paths and serial port)
+.vscode/
+.cache/
+
+# Logs
+*.log

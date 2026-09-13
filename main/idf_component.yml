@@ -1,0 +1,9 @@
+## IDF Component Manager Manifest File
+
+dependencies:
+  idf:
+    version: ">=5.5"
+
+  # Matter SDK (includes the connectedhomeip sources, no esp-matter clone needed)
+  espressif/esp_matter:
+    version: "~1.6.0"

@@ -134,17 +134,23 @@ The firmware uses the Matter **test** commissioning data:
 | Passcode       | `20202021`               |
 | Discriminator  | `3840`                   |
 
-The codes are also printed in the serial log at boot. To show the QR code, open
+These are the standard test values (VID `0xFFF1`, PID `0x8000`, Bluetooth LE);
+they are not printed in the serial log. To show the QR code, open
 `https://project-chip.github.io/connectedhomeip/qrcode.html?data=MT:Y.K9042C00KA0648G00`.
 
 1. Power the board: the LED blinks blue.
 2. In the app, add a **Matter** device and scan the QR code (or type the manual
    code). Choose the home where the Thread Border Router is.
-3. With test credentials the app may warn that the device is **not certified**;
+3. Tuya-based apps (Tuya/Smart Life, Nova Digital) may ask for the Wi-Fi SSID
+   and password: skip that step and tell the app the device does not use Wi-Fi
+   (the ESP32-H2 has no Wi-Fi radio).
+4. With test credentials the app may warn that the device is **not certified**;
    if it offers to continue, accept. Apps that refuse uncertified devices cannot
    commission this firmware.
-4. The LED blinks purple while commissioning, then turns green once the device
-   is attached to the Thread network. The relay follows the app's on/off.
+5. The LED blinks purple while commissioning, then turns green once the device
+   is attached to the Thread network. The device shows up as a plug/outlet and
+   the relay follows the app's on/off. The first commands right after adding it
+   may not reach the device while it is still settling in the Thread network.
 
 Deleting the device in the app removes its fabric; with no fabric left the
 device factory resets and blinks blue again.

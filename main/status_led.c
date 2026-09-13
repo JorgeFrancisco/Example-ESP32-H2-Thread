@@ -35,10 +35,12 @@ static const led_pattern_t s_state_patterns[] = {
     [STATUS_LED_CONNECTED]     = { 0,  ON, 0,  false },
 };
 
-static const led_pattern_t s_error_solid = { ON, 0, 0, false };
-static const led_pattern_t s_error_blink = { ON, 0, 0, true };
+static const led_pattern_t s_error_solid = { ON, 0,  0,  false };
+static const led_pattern_t s_error_blink = { ON, 0,  0,  true  };
+static const led_pattern_t s_relay_on    = { ON, ON, ON, false };
 
 static volatile status_led_state_t s_state = STATUS_LED_OFF;
+static volatile bool s_relay;
 static volatile TickType_t s_error_until;
 static rmt_channel_handle_t s_channel;
 static rmt_encoder_handle_t s_encoder;
@@ -57,18 +59,25 @@ static void led_write_rgb(uint8_t r, uint8_t g, uint8_t b)
     }
 }
 
-/* A recent error or a Thread network that takes too long overrides the state */
+/*
+ * A recent error or a Thread network that takes too long overrides the state.
+ * Once connected for a while, the LED shows the relay output instead.
+ */
 static const led_pattern_t *led_current_pattern(status_led_state_t state,
                                                 TickType_t now,
-                                                TickType_t state_since)
+                                                TickType_t in_state,
+                                                bool show_relay)
 {
     if (s_error_until != 0 && now < s_error_until) {
         return &s_error_solid;
     }
 
-    if (state == STATUS_LED_ATTACHING &&
-        now - state_since > pdMS_TO_TICKS(STATUS_LED_ATTACH_TIMEOUT_MS)) {
+    if (state == STATUS_LED_ATTACHING && in_state > pdMS_TO_TICKS(STATUS_LED_ATTACH_TIMEOUT_MS)) {
         return &s_error_blink;
+    }
+
+    if (show_relay) {
+        return s_relay ? &s_relay_on : &s_state_patterns[STATUS_LED_OFF];
     }
 
     return &s_state_patterns[state];
@@ -81,6 +90,7 @@ static void status_led_task(void *arg)
     status_led_state_t last_state = s_state;
     TickType_t state_since = xTaskGetTickCount();
     bool blink_on = false;
+    bool showing_relay = false;
 
     for (;;) {
         TickType_t now = xTaskGetTickCount();
@@ -91,7 +101,16 @@ static void status_led_task(void *arg)
             state_since = now;
         }
 
-        const led_pattern_t *pattern = led_current_pattern(state, now, state_since);
+        TickType_t in_state = now - state_since;
+        bool show_relay = state == STATUS_LED_CONNECTED &&
+                          in_state >= pdMS_TO_TICKS(STATUS_LED_CONNECTED_MS);
+
+        if (show_relay != showing_relay) {
+            showing_relay = show_relay;
+            ESP_LOGI(TAG, "LED shows the %s", show_relay ? "relay output" : "network status");
+        }
+
+        const led_pattern_t *pattern = led_current_pattern(state, now, in_state, show_relay);
         bool lit;
 
         blink_on = !blink_on;
@@ -129,12 +148,18 @@ void status_led_init(void)
         return;
     }
 
-    xTaskCreate(status_led_task, "status_led", 2048, NULL, 3, NULL);
+    /* Room for ESP_LOGI when the LED switches between status and relay */
+    xTaskCreate(status_led_task, "status_led", 3072, NULL, 3, NULL);
 }
 
 void status_led_set_state(status_led_state_t state)
 {
     s_state = state;
+}
+
+void status_led_set_relay(bool on)
+{
+    s_relay = on;
 }
 
 void status_led_flash_error(void)

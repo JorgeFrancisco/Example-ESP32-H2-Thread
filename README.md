@@ -41,9 +41,14 @@ Pins and timings are in `main/app_config.h`.
 | Blue, blinking    | Waiting to be commissioned (Bluetooth LE advertising)     |
 | Purple, blinking  | Commissioning in progress                                 |
 | Purple, solid     | Commissioned, joining the Thread network                  |
-| Green, solid      | Commissioned and attached to the Thread network           |
+| Green, solid      | Attached to the Thread network (first 10 s)               |
+| White / off       | Connected for more than 10 s: relay on / relay off        |
 | Red, solid (3 s)  | Commissioning failed, removed, or factory reset           |
 | Red, blinking     | Commissioned but no Thread network for 3 minutes          |
+
+After 10 s connected (`STATUS_LED_CONNECTED_MS`) the LED mirrors the relay
+output. Any other state (commissioning, removal, errors, Thread network lost)
+shows the status again; after reconnecting, green is shown for 10 s once more.
 
 When the commissioning window closes without being commissioned (LED off), hold
 BOOT for 10 s to open it again.
@@ -164,6 +169,19 @@ at manufacturing time to chips running the Tuya Zigbee SDK. A custom ESP32-H2
 Zigbee firmware is reported as **not authorized** in the app. Tuya apps do
 commission third-party Matter devices, so with a hub that includes a Thread
 Border Router the ESP32-H2 can join as a standard Matter device instead.
+
+### Home Assistant and Tuya hubs
+
+- Every applied attribute change is logged, including writes from controllers:
+  `esp_matter_attribute: ********** W : Endpoint 0x0001's Cluster 0x00000006's Attribute 0x00004003 is 1 **********`
+  (`0x4003` is `StartUpOnOff`: 0 off, 1 on, 2 toggle, null previous state).
+- When Home Assistant reaches the device **through a Tuya hub**, the hub forwards
+  the "Power-on behavior" setting as `null` whatever is selected, so the device
+  always restores its previous state. On/off commands are forwarded correctly.
+- Commissioning the device **directly** in Home Assistant writes the real value.
+  It requires `enable_test_net_dcl` in the Matter Server app configuration
+  (otherwise Home Assistant aborts right after device attestation, because of
+  the test certificates) and the Thread credentials on the phone.
 
 ### Test credentials
 

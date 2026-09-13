@@ -12,6 +12,7 @@
 #define STATUS_LED_BLINK_MS                     300
 #define STATUS_LED_ERROR_MS                     3000    /* solid red after an error */
 #define STATUS_LED_ATTACH_TIMEOUT_MS            180000  /* commissioned, no Thread network */
+#define STATUS_LED_CONNECTED_MS                 10000   /* green after connecting, then the relay output */
 
 /* BOOT button of the DevKitM-1 (GPIO9, active low) */
 #define RESET_BUTTON_GPIO                       9

@@ -38,7 +38,7 @@ static uint16_t s_relay_endpoint_id;
 static bool s_commissioning; /* commissioning session in progress */
 
 /* -------------------------------------------------------------------------- */
-/* Status LED and factory reset                                               */
+/* Status LED, relay and factory reset                                        */
 /* -------------------------------------------------------------------------- */
 
 /* Runs in the Matter context (event callback) */
@@ -56,6 +56,13 @@ static void update_status_led(void)
     } else {
         status_led_set_state(STATUS_LED_OFF);
     }
+}
+
+/* Drives the relay; the status LED shows it once the device has been connected for a while */
+static void relay_output(bool on)
+{
+    relay_set(on);
+    status_led_set_relay(on);
 }
 
 /* Forgets the fabrics and the Thread network, then reboots into commissioning mode */
@@ -142,7 +149,11 @@ static void app_event_cb(const ChipDeviceEvent *event, intptr_t arg)
     update_status_led();
 }
 
-/* The OnOff attribute drives the relay */
+/*
+ * The OnOff attribute drives the relay. Every applied attribute change is
+ * logged, including writes from controllers (e.g. StartUpOnOff, which esp_matter
+ * itself only prints for updates made by the application).
+ */
 static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16_t endpoint_id, uint32_t cluster_id,
                                          uint32_t attribute_id, esp_matter_attr_val_t *val, void *priv_data)
 {
@@ -152,7 +163,9 @@ static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16
         endpoint_id == s_relay_endpoint_id &&
         cluster_id == OnOff::Id &&
         attribute_id == OnOff::Attributes::OnOff::Id) {
-        relay_set(val->val.b);
+        relay_output(val->val.b);
+    } else if (type == attribute::POST_UPDATE && val != nullptr && val->type != ESP_MATTER_VAL_TYPE_INVALID) {
+        attribute::val_print(endpoint_id, cluster_id, attribute_id, val, false);
     }
 
     return ESP_OK;
@@ -237,7 +250,7 @@ static void relay_apply_stored_state(void)
     attribute_t *attribute = attribute::get(s_relay_endpoint_id, OnOff::Id, OnOff::Attributes::OnOff::Id);
 
     if (attribute != nullptr && attribute::get_val(attribute, &val) == ESP_OK) {
-        relay_set(val.val.b);
+        relay_output(val.val.b);
     }
 }
 

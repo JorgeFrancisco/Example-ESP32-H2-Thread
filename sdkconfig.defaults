@@ -22,6 +22,21 @@ CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLE_CONN_REATTEMPT=n
 
+# Minimal NimBLE for a Matter over Thread device: BLE is only used to carry
+# CHIPoBLE (BTP) during commissioning, so the device is peripheral-only and
+# never scans, connects out, or pairs. Matter secures the session with PASE,
+# not with BLE bonding, and CHIPoBLE advertises with a static random address
+# (ble_hs_id_gen_rnd(0, ...)) instead of a resolvable private address, so the
+# host privacy/RPA code is unreachable here as well. Disabling the central
+# role also drops CONFIG_BT_NIMBLE_GATT_CLIENT, and disabling security drops
+# the SMP/bonding subtree together with its TinyCrypt dependency.
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_SECURITY_ENABLE=n
+CONFIG_BT_NIMBLE_LL_CFG_FEAT_LE_CODED_PHY=n
+CONFIG_BT_NIMBLE_HS_PVCY=n
+
 #
 # OpenThread (Full Thread Device: a mains-powered relay can be a Thread router)
 #
@@ -169,3 +184,18 @@ CONFIG_SUPPORT_COMMODITY_METERING_CLUSTER=n
 CONFIG_SUPPORT_COMMODITY_TARIFF_CLUSTER=n
 CONFIG_SUPPORT_PUSH_AV_STREAM_TRANSPORT_CLUSTER=n
 CONFIG_SUPPORT_GROUPCAST_CLUSTER=n
+
+#
+# Flash and RAM footprint
+#
+# Assertions stay enabled, only the verbose failure message is dropped: a
+# failing assertion still aborts, it just prints the backtrace instead of
+# "assert failed: <func> <file>:<line> (<expr>)". Do not use ASSERTIONS_DISABLE
+# (NDEBUG) here, that would remove the checks themselves.
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+
+# newlib-nano printf/scanf. It drops 64-bit integer conversions (%lld/%llu)
+# and C99 positional arguments; neither appears in this firmware (CHIP prints
+# 64-bit ids as two 32-bit halves via ChipLogFormatX64). Keep it that way when
+# adding new log statements.
+CONFIG_LIBC_NEWLIB_NANO_FORMAT=y

@@ -416,6 +416,18 @@ Border Router the ESP32-H2 can join as a standard Matter device instead.
   Tuya"), the real value is written (`... Attribute 0x00004003 is 0` from the
   Home Assistant fabric). With the Tuya app added afterwards through sharing,
   the hub did not rewrite `StartUpOnOff` by itself during our tests.
+- **Two devices in Home Assistant.** If the Tuya hub is itself in the Home
+  Assistant Matter integration, it is a Matter bridge: once the board is added
+  to the hub as a sub-device, the hub exposes it as one of its own endpoints
+  (device types `0x010A` On/Off Plug-in Unit and `0x0013` Bridged Node) and
+  Home Assistant shows a second device, "connected via" the hub. That copy
+  only has the on/off switch and the power-on behavior select, while the
+  device commissioned directly has all the entities (identify, firmware
+  update, Thread diagnostics...). On/off is forwarded to the board, but the
+  bridged `StartUpOnOff` belongs to the hub endpoint and is not read from the
+  board: in our tests the board had `1` (on) and the bridged endpoint showed
+  `0` (off). Changing it there writes `null` to the board (see above). Use the
+  direct device and disable the bridged one in Home Assistant.
 - Direct commissioning requires `enable_test_net_dcl` in the Matter Server app
   configuration (otherwise Home Assistant aborts right after device attestation,
   because of the test certificates) and the Thread credentials on the phone.

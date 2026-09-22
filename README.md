@@ -384,13 +384,72 @@ free heap logged when the server starts):
 | Flash: `http_parser` + `esp_http_server` + `rest_api.cpp`       | 23.9 KB (12.3 + 10.4 + 1.1)                     |
 | Flash: whole application image                                  | +42.8 KB (1,702,048 → 1,744,832 bytes)          |
 | Static RAM (`.bss`/`.data`)                                     | negligible (6 bytes in `rest_api.cpp`)          |
-| Heap when the server starts (task stack, control socket, state) | ~7.2 KB (42,376 → 35,212 bytes free)            |
+| Heap when the server starts (task stack, control socket, state) | ~7.2 KB (57,452 → 50,288 bytes free)            |
 
-The rest of the image growth is other code the server pulls in (most likely
-the lwIP TCP/socket API, which Matter alone does not use). The server is
-configured for 1 URI handler and 2 simultaneous connections to keep the heap
-cost low: after Matter starts only about 35 KB of heap is left, so keep
+The flash figures were measured when the server was added, before the NimBLE
+and libc reductions of "Memory footprint" below; the heap figure is from the
+current build. The rest of the image growth is other code the server pulls in
+(most likely the lwIP TCP/socket API, which Matter alone does not use). The
+server is configured for 1 URI handler and 2 simultaneous connections to keep
+the heap cost low: after Matter starts only about 50 KB of heap is left, so keep
 additions small.
+
+## Memory footprint (ESP32-H2)
+
+Baseline for comparing with other chips. Measured on the ESP32-H2-DevKitM-1
+(chip revision v0.1, 4 MB flash, 96 MHz) with ESP-IDF v5.5.5, esp-matter 1.6
+and the `sdkconfig.defaults` of this repository (ELF SHA256 `50e65306f...`).
+
+### Flash
+
+| Item                                   | Size                                   |
+| -------------------------------------- | -------------------------------------- |
+| Application image (`.bin`)             | 1,606,256 bytes (`0x188270`)           |
+| Application partition (`ota_0`/`ota_1`) | 1,966,080 bytes (`0x1E0000`) each      |
+| Free in the application partition      | 359,824 bytes (18 %)                   |
+| Code (`.text`) + constants (`.rodata`) | 1,329,514 + 185,540 bytes              |
+| Bootloader                             | 20,272 bytes                           |
+
+The 4 MB flash is fully allocated by `partitions.csv`: two 1.875 MB OTA slots,
+48 KB NVS, 24 KB factory data (`fctry`) and small system partitions.
+
+### RAM
+
+Static usage (`idf.py size`):
+
+| Region              | Used                | Of       | Split                                                  |
+| ------------------- | ------------------- | -------- | ------------------------------------------------------ |
+| DIRAM (HP SRAM)     | 173,804 B (67.4 %)  | 258,000 B | `.bss` 83,536, `.text` (IRAM code) 82,404, `.data` 7,864 |
+| LP SRAM             | 24 B                | 4,096 B  |                                                        |
+
+Heap at runtime (boot log, 3 fabrics, Thread attached as router):
+
+| Point                                                  | Free heap        |
+| ------------------------------------------------------ | ---------------- |
+| Heap regions at boot (`heap_init`)                     | 139 + 10 KiB RAM, 3 KiB RTC RAM |
+| Matter started, Thread attached, before the REST server | 57,452 bytes     |
+| After the REST server starts (minimum ever so far)      | 50,288 bytes     |
+
+These values are logged about 1.5 s after boot, before BLE is released
+(`BLE deinit successful and memory reclaimed`, once commissioned) and before
+the controllers open their CASE sessions and subscriptions, which take and
+return heap afterwards.
+
+### Largest components
+
+| Component (`idf.py size-components`) | Flash      | RAM (DIRAM)                   |
+| ------------------------------------ | ---------- | ----------------------------- |
+| `esp_matter` (Matter SDK)            | 487,675 B  | 49,723 B (mostly `.bss`)      |
+| `ble_app` (BLE controller)           | 223,213 B  | 22,908 B (mostly IRAM code)   |
+| `openthread`                         | 211,297 B  | 22,677 B (mostly `.bss`)      |
+| `mbedcrypto`                         | 90,962 B   | 422 B                         |
+| `lwip`                               | 81,722 B   | 2,650 B                       |
+| `bt` (NimBLE host)                   | 53,435 B   | 3,812 B                       |
+| `c_nano` (newlib-nano)               | 34,637 B   | 1,128 B                       |
+
+To repeat the measurement on another chip: `idf.py size`, `idf.py
+size-components`, the `heap_init` lines of the boot log and the `rest_api:
+HTTP server on port 80: free heap ...` line.
 
 ## Implementation notes
 

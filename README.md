@@ -312,14 +312,28 @@ the device in the Tuya app:
    device > "No, it's new"**, then scan the board's QR code. It can take a few
    minutes: the phone commissions the device first and then hands it over to
    Home Assistant (two fabrics appear in the log).
-4. In Home Assistant, use the device's **share** option to open a commissioning
-   window and get a temporary pairing code.
-5. In the Tuya app, add a **Matter** device with that code (not the board's QR
-   code), skip the Wi-Fi step and accept the uncertified device warning.
+4. In Home Assistant, open the device and tap **Share device**: it opens a
+   commissioning window and shows a temporary sharing QR code (and pairing
+   code).
+5. In the Tuya app, open the **gateway that has Thread**, then **Sub-device**
+   (*Sub dispositivo*) > **Device management** (*Gerenciamento de
+   dispositivos*) > **Scan the code to add** (*Escaneie o código para
+   adicionar*), and point it at the sharing QR code shown by Home Assistant
+   (not the board's QR code). The sharing window is temporary: if it expires,
+   tap **Share device** again.
+6. When the app warns that the device is **not certified**, choose **Add
+   anyway** (*Adicionar mesmo assim*).
 
 Removing the device from one controller only removes that controller's fabric;
 the device factory resets only when the last fabric is removed. See
 "Home Assistant and Tuya hubs" below before changing the power-on behavior.
+
+On Android, the Companion app commissions through Google Play Services, which
+keeps its own fabric (vendor ID `0x6006`, shown at boot as `Fabric index ...
+VendorId 0x6006`). Removing the device from Home Assistant then leaves that
+fabric behind and the device does not go back to commissioning mode: also
+remove it in **Android Settings > Google > Devices & sharing > Matter devices**,
+or hold BOOT for 10 s.
 
 ## REST API
 

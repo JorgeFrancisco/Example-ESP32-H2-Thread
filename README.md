@@ -332,8 +332,11 @@ On Android, the Companion app commissions through Google Play Services, which
 keeps its own fabric (vendor ID `0x6006`, shown at boot as `Fabric index ...
 VendorId 0x6006`). Removing the device from Home Assistant then leaves that
 fabric behind and the device does not go back to commissioning mode: also
-remove it in **Android Settings > Google > Devices & sharing > Matter devices**,
-or hold BOOT for 10 s.
+remove it on the phone, in **Settings > Google services > All services > Matter
+devices**: switch to **This Android device**, tap the device and choose
+**Remove device** (in Portuguese: *Configurações > Serviços do Google > Todos os
+serviços > Dispositivos Matter > Este dispositivo Android > Remover
+dispositivo*). Or hold BOOT for 10 s.
 
 ## REST API
 
